@@ -9,26 +9,24 @@ use std::{
 };
 use thiserror::Error;
 
+pub mod utils;
+
 use crate::bindings::*;
+use crate::utils::*;
 
 #[allow(warnings)]
-pub mod bindings {
+mod bindings {
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 
 const LIB_PATH: &str = "libamd_smi.so";
-const INIT_FLAG: amdsmi_init_flags_t = amdsmi_init_flags_t_AMDSMI_INIT_AMD_GPUS;
-const UUID_LENGTH: u32 = AMDSMI_GPU_UUID_SIZE;
-
-const SUCCESS: amdsmi_status_t = amdsmi_status_t_AMDSMI_STATUS_SUCCESS;
-const OUT_OF_RESSOURCES: amdsmi_status_t = amdsmi_status_t_AMDSMI_STATUS_OUT_OF_RESOURCES;
 
 /// Error while using the AMD SMI library.
 ///
 /// This wraps an [`amdsmi_status_t`] provided by the underlying C functions.
 #[derive(Debug, Error)]
-#[error("amd-smi library error: {0}")]
-pub struct AmdError(pub amdsmi_status_t);
+#[error("amd-smi library error: {0:?}")]
+pub struct AmdError(pub AmdStatus);
 
 #[derive(Debug, Error)]
 pub enum AmdInitError {
@@ -42,15 +40,6 @@ pub struct AmdSmi {
     amdsmi: libamd_smi,
 }
 
-impl Drop for AmdSmi {
-    fn drop(&mut self) {
-        // Shut down the AMD-SMI library and release all internal resources.
-        // SAFETY: The function expects a valid, initialized library instance.
-        // The shutdown is called only once when the last reference is dropped.
-        unsafe { self.amdsmi.amdsmi_shut_down() };
-    }
-}
-
 pub struct AmdSocketHandle {
     amdsmi: Arc<AmdSmi>,
     inner: amdsmi_socket_handle,
@@ -61,28 +50,27 @@ pub struct AmdProcessorHandle {
     inner: amdsmi_processor_handle,
 }
 
-#[derive(Debug, Default, Clone, Copy)]
-pub struct AmdEnergyConsumptionInfo {
-    /// The energy consumption value of an AMD GPU device since the last boot in micro Joules.
-    pub energy: u64,
-    /// Precision factor of the energy counter in micro Joules.
-    pub resolution: f32,
-    /// The time during which the energy value is recovered in ns.
-    pub timestamp: u64,
-}
-
 /// Checking the value of [`amdsmi_status_t`] to return an error or success.
 fn check_status(status: amdsmi_status_t) -> Result<(), AmdError> {
-    if status == SUCCESS {
+    if status == AmdStatus::AMDSMI_STATUS_SUCCESS {
         Ok(())
     } else {
         Err(AmdError(status))
     }
 }
 
+impl Drop for AmdSmi {
+    fn drop(&mut self) {
+        // Shut down the AMD-SMI library and release all internal resources.
+        // SAFETY: The function expects a valid, initialized library instance.
+        // The shutdown is called only once when the last reference is dropped.
+        unsafe { self.amdsmi.amdsmi_shut_down() };
+    }
+}
+
 impl AmdSmi {
-    /// Initialize and start amd-smi library with [`INIT_FLAG`].
-    pub fn init() -> Result<Arc<Self>, AmdInitError> {
+    /// Initialize and start amd-smi library with [`InitFlags::AMD_GPUS`].
+    pub fn init(flags: InitFlags) -> Result<Arc<Self>, AmdInitError> {
         // SAFETY: The library must exist at the specified path, otherwise `libamd_smi::new` returns an error.
         // This operation involves raw FFI interaction and assumes the dynamic loader succeeds.
         let amdsmi = unsafe { libamd_smi::new(LIB_PATH)? };
@@ -90,10 +78,9 @@ impl AmdSmi {
         // SAFETY: The function expects a valid library instance and valid flags.
         // According to the AMD-SMI documentation, the function fully initializes internal structures for GPU discovery.
         // The return code `amdsmi_status_t` is checked to ensure initialization succeeded before using the library.
-        let result = unsafe { amdsmi.amdsmi_init(INIT_FLAG.into()) };
-        if result != SUCCESS {
-            return Err(AmdInitError::Init(AmdError(result)));
-        }
+        let result = unsafe { amdsmi.amdsmi_init(flags.bits().into()) };
+        check_status(result).map_err(AmdInitError::Init)?;
+
         Ok(Arc::new(AmdSmi { amdsmi }))
     }
 }
@@ -130,9 +117,7 @@ impl AmdInterface for Arc<AmdSmi> {
             self.amdsmi
                 .amdsmi_get_socket_handles(&mut socket_count, null_mut())
         };
-        if result != SUCCESS {
-            return Err(AmdError(result));
-        }
+        check_status(result)?;
 
         // Allocate an uninitialized vector of socket handles.
         // SAFETY: Each element is zeroed and considered valid for the FFI call and AMD-SMI library will fill each handle in the second call.
@@ -145,18 +130,17 @@ impl AmdInterface for Arc<AmdSmi> {
             self.amdsmi
                 .amdsmi_get_socket_handles(&mut socket_count, socket_handles.as_mut_ptr())
         };
-        if result == SUCCESS {
-            socket_handles.truncate(socket_count as usize);
-            Ok(socket_handles
-                .into_iter()
-                .map(|s| AmdSocketHandle {
-                    amdsmi: Arc::clone(self),
-                    inner: s,
-                })
-                .collect())
-        } else {
-            Err(AmdError(result))
-        }
+        check_status(result)?;
+
+        socket_handles.truncate(socket_count as usize);
+
+        Ok(socket_handles
+            .into_iter()
+            .map(|s| AmdSocketHandle {
+                amdsmi: Arc::clone(self),
+                inner: s,
+            })
+            .collect())
     }
 }
 
@@ -184,9 +168,7 @@ impl SocketHandle for AmdSocketHandle {
                 null_mut(),
             )
         };
-        if result != SUCCESS {
-            return Err(AmdError(result));
-        }
+        check_status(result)?;
 
         // Allocate an uninitialized vector of socket handles.
         // SAFETY: Each element is zeroed and considered valid for the FFI call and AMD-SMI library will fill each handle in the second call.
@@ -202,18 +184,15 @@ impl SocketHandle for AmdSocketHandle {
                 processor_handles.as_mut_ptr(),
             )
         };
-        if result == SUCCESS {
-            processor_handles.truncate(processor_count as usize);
-            Ok(processor_handles
-                .into_iter()
-                .map(|s| AmdProcessorHandle {
-                    amdsmi: Arc::clone(&self.amdsmi),
-                    inner: s,
-                })
-                .collect())
-        } else {
-            Err(AmdError(result))
-        }
+        check_status(result)?;
+        processor_handles.truncate(processor_count as usize);
+        Ok(processor_handles
+            .into_iter()
+            .map(|s| AmdProcessorHandle {
+                amdsmi: Arc::clone(&self.amdsmi),
+                inner: s,
+            })
+            .collect())
     }
 }
 
@@ -222,17 +201,17 @@ pub trait ProcessorHandle {
     /// Retrieves the UUID of the GPU device.
     fn device_uuid(&self) -> Result<String, AmdError>;
 
-    /// Retrieves a [`amdsmi_engine_usage_t`] structure containing all data about GPU device activities.
-    fn device_activity(&self) -> Result<amdsmi_engine_usage_t, AmdError>;
+    /// Retrieves a [`AmdEngineUsage`] structure containing all data about GPU device activities.
+    fn device_activity(&self) -> Result<AmdEngineUsage, AmdError>;
 
     /// Retrieves the energy consumption of the GPU device.
-    fn device_energy_consumption(&self) -> Result<AmdEnergyConsumptionInfo, AmdError>;
+    fn device_energy_consumption(&self) -> Result<AmdEnergyConsumption, AmdError>;
 
-    /// Retrieves the memory consumption of the GPU device.
-    fn device_memory_usage(&self, mem_type: amdsmi_memory_type_t) -> Result<u64, AmdError>;
+    /// Retrieves for a given [`AmdMemoryType`] the memory consumption of the GPU device.
+    fn device_memory_usage(&self, mem_type: AmdMemoryType) -> Result<u64, AmdError>;
 
-    /// Retrieves a [`amdsmi_power_info_t`] structure containing all data about GPU device power consumption.
-    fn device_power_consumption(&self) -> Result<amdsmi_power_info_t, AmdError>;
+    /// Retrieves a [`AmdPowerConsumption`] structure containing all data about GPU device power consumption.
+    fn device_power_consumption(&self) -> Result<AmdPowerConsumption, AmdError>;
 
     /// Retrieves the power management status accessability of the GPU device.
     fn device_power_managment(&self) -> Result<bool, AmdError>;
@@ -241,35 +220,34 @@ pub trait ProcessorHandle {
     ///
     /// # Arguments
     ///
-    /// - `sensor_type`: Temperature retrieved by a [`amdsmi_temperature_metric_t`] sensor on AMD GPU hardware.
-    /// - `metric`: Temperature type [`amdsmi_temperature_metric_t`] analysed (current, average...).
+    /// - `sensor_type`: Temperature retrieved by a [`AmdTemperatureType`] sensor on AMD GPU hardware.
+    /// - `metric`: Temperature type [`AmdTemperatureMetric`] analyzed (current, average...).
     fn device_temperature(
         &self,
-        sensor_type: amdsmi_temperature_type_t,
-        metric: amdsmi_temperature_metric_t,
+        sensor_type: AmdTemperatureType,
+        metric: AmdTemperatureMetric,
     ) -> Result<i64, AmdError>;
 
     /// Retrieves the voltage of a given area of the GPU device.
     ///
     /// # Arguments
     ///
-    /// - `sensor_type`: Voltage retrieved by a [`amdsmi_voltage_type_t`] sensor on AMD GPU hardware.
-    /// - `metric`: Voltage type [`amdsmi_voltage_metric_t`] analysed (current, average...).
+    /// - `sensor_type`: Voltage retrieved by a [`AmdVoltageType`] sensor on AMD GPU hardware.
+    /// - `metric`: Voltage type [`AmdVoltageMetric`] analyzed (current, average...).
     fn device_voltage(
         &self,
-        sensor_type: amdsmi_voltage_type_t,
-        metric: amdsmi_voltage_metric_t,
+        sensor_type: AmdVoltageType,
+        metric: AmdVoltageMetric,
     ) -> Result<i64, AmdError>;
 
-    /// Retrieves a set of [`amdsmi_proc_info_t`] structure containing data about running processes on the GPU device.
-    fn device_process_list(&self) -> Result<Vec<amdsmi_proc_info_t>, AmdError>;
+    /// Retrieves a set of [`AmdProcess`] structure containing data about running processes on the GPU device.
+    fn device_process_list(&self) -> Result<Vec<AmdProcess>, AmdError>;
 }
 
 impl ProcessorHandle for AmdProcessorHandle {
-    /// Retrieves the UUID of the GPU device.
     fn device_uuid(&self) -> Result<String, AmdError> {
-        let mut uuid_buffer = vec![0 as c_char; UUID_LENGTH as usize];
-        let mut uuid_length = UUID_LENGTH;
+        let mut uuid_buffer = vec![0 as c_char; AMDSMI_GPU_UUID_SIZE as usize];
+        let mut uuid_length = AMDSMI_GPU_UUID_SIZE;
 
         // SAFETY: According to AMD-SMI documentation, the function will not write beyond `uuid_length`.
         // `uuid_length` must be initialized to the buffer size, and the function will update it with the actual length.
@@ -289,7 +267,7 @@ impl ProcessorHandle for AmdProcessorHandle {
         let c_str = if uuid_buffer[(uuid_length - 1) as usize] == 0 {
             unsafe { CStr::from_ptr(uuid_buffer.as_ptr()) }
         } else {
-            let mut cstr_buffer = [0 as c_char; UUID_LENGTH as usize + 1];
+            let mut cstr_buffer = [0 as c_char; AMDSMI_GPU_UUID_SIZE as usize + 1];
             cstr_buffer[..uuid_length as usize]
                 .copy_from_slice(&uuid_buffer[..uuid_length as usize]);
             cstr_buffer[uuid_length as usize] = 0;
@@ -302,8 +280,7 @@ impl ProcessorHandle for AmdProcessorHandle {
             .map_err(|_| AmdError(result))
     }
 
-    /// Retrieves a [`amdsmi_engine_usage_t`] structure containing all data about GPU device activities.
-    fn device_activity(&self) -> Result<amdsmi_engine_usage_t, AmdError> {
+    fn device_activity(&self) -> Result<AmdEngineUsage, AmdError> {
         // Allocate uninitialized memory for the structure and avoid reading uninitialized memory before the FFI call.
         let mut info = MaybeUninit::<amdsmi_engine_usage_t>::uninit();
 
@@ -319,12 +296,11 @@ impl ProcessorHandle for AmdProcessorHandle {
         check_status(result)?;
 
         // SAFETY: `assume_init()` is safe because the FFI call succeeded and fully initialized `info`.
-        Ok(unsafe { info.assume_init() })
+        Ok(unsafe { info.assume_init().into() })
     }
 
-    /// Retrieves the energy consumption of the GPU device.
-    fn device_energy_consumption(&self) -> Result<AmdEnergyConsumptionInfo, AmdError> {
-        let mut consumption = AmdEnergyConsumptionInfo {
+    fn device_energy_consumption(&self) -> Result<AmdEnergyConsumption, AmdError> {
+        let mut consumption = AmdEnergyConsumption {
             energy: 0,
             resolution: 0.0,
             timestamp: 0,
@@ -346,8 +322,7 @@ impl ProcessorHandle for AmdProcessorHandle {
         Ok(consumption)
     }
 
-    /// Retrieves the memory consumption of the GPU device.
-    fn device_memory_usage(&self, mem_type: amdsmi_memory_type_t) -> Result<u64, AmdError> {
+    fn device_memory_usage(&self, mem_type: AmdMemoryType) -> Result<u64, AmdError> {
         let mut used = 0;
 
         // SAFETY: Pass a mutable pointer to `used` for the FFI function to write the memory usage.
@@ -364,7 +339,7 @@ impl ProcessorHandle for AmdProcessorHandle {
     }
 
     /// Retrieves a [`amdsmi_power_info_t`] structure containing all data about GPU device power consumption.
-    fn device_power_consumption(&self) -> Result<amdsmi_power_info_t, AmdError> {
+    fn device_power_consumption(&self) -> Result<AmdPowerConsumption, AmdError> {
         // Reserve uninitialized memory space for the C function to fill.
         let mut info = MaybeUninit::<amdsmi_power_info_t>::uninit();
 
@@ -381,10 +356,9 @@ impl ProcessorHandle for AmdProcessorHandle {
         check_status(result)?;
 
         // SAFETY: `assume_init()` is safe because the FFI call returned SUCCESS, meaning `info` is fully initialized.
-        Ok(unsafe { info.assume_init() })
+        Ok(unsafe { info.assume_init().into() })
     }
 
-    /// Retrieves the power management status accessability of the GPU device.
     fn device_power_managment(&self) -> Result<bool, AmdError> {
         let mut enabled = false;
 
@@ -401,16 +375,10 @@ impl ProcessorHandle for AmdProcessorHandle {
         Ok(enabled)
     }
 
-    /// Retrieves the temperature of a given area of the GPU device.
-    ///
-    /// # Arguments
-    ///
-    /// - `sensor_type`: Temperature retrieved by a [`amdsmi_temperature_metric_t`] sensor on AMD GPU hardware.
-    /// - `metric`: Temperature type [`amdsmi_temperature_metric_t`] analyzed (current, average...).
     fn device_temperature(
         &self,
-        sensor_type: amdsmi_temperature_type_t,
-        metric: amdsmi_temperature_metric_t,
+        sensor_type: AmdTemperatureType,
+        metric: AmdTemperatureMetric,
     ) -> Result<i64, AmdError> {
         let mut temperature = 0;
 
@@ -430,16 +398,10 @@ impl ProcessorHandle for AmdProcessorHandle {
         Ok(temperature)
     }
 
-    /// Retrieves the voltage of a given area of the GPU device.
-    ///
-    /// # Arguments
-    ///
-    /// - `sensor_type`: Voltage retrieved by a [`amdsmi_voltage_type_t`] sensor on AMD GPU hardware.
-    /// - `metric`: Voltage type [`amdsmi_voltage_metric_t`] analyzed (current, average...).
     fn device_voltage(
         &self,
-        sensor_type: amdsmi_voltage_type_t,
-        metric: amdsmi_voltage_metric_t,
+        sensor_type: AmdVoltageType,
+        metric: AmdVoltageMetric,
     ) -> Result<i64, AmdError> {
         let mut voltage = 0;
 
@@ -460,8 +422,7 @@ impl ProcessorHandle for AmdProcessorHandle {
         Ok(voltage)
     }
 
-    /// Retrieves a set of [`amdsmi_proc_info_t`] structure containing data about running processes on the GPU device.
-    fn device_process_list(&self) -> Result<Vec<amdsmi_proc_info_t>, AmdError> {
+    fn device_process_list(&self) -> Result<Vec<AmdProcess>, AmdError> {
         let mut max_processes = 0;
 
         // SAFETY: Retrieves the total number of GPU processes.
@@ -475,8 +436,10 @@ impl ProcessorHandle for AmdProcessorHandle {
             )
         };
 
-        if result != SUCCESS && result != OUT_OF_RESSOURCES {
-            return Err(AmdError(result));
+        match result {
+            AmdStatus::AMDSMI_STATUS_SUCCESS => {}
+            AmdStatus::AMDSMI_STATUS_OUT_OF_RESOURCES => {}
+            err => return Err(AmdError(err)),
         }
 
         if max_processes == 0 {
@@ -503,19 +466,22 @@ impl ProcessorHandle for AmdProcessorHandle {
             match result {
                 // SAFETY: According to AMD-SMI documentation, all elements up to `count` are written to the provided buffer.
                 // Allocated `max_processes` elements in `SUCCESS` status implies all elements are initialized.
-                SUCCESS => unsafe {
+                AmdStatus::AMDSMI_STATUS_SUCCESS => unsafe {
                     buffer.set_len(count as usize);
-                    return Ok(buffer.into_iter().map(|x| x.assume_init()).collect());
-                },
+                    let processes = buffer
+                        .into_iter()
+                        .map(|x| AmdProcess::from(x.assume_init()))
+                        .collect();
 
+                    return Ok(processes);
+                },
                 // According to AMD-SMI documentation: The buffer was filled up to its capacity.
                 // A counter is used to contain the actual total number of processes.
                 // If The buffer was too small, we retry with the new required size.
-                OUT_OF_RESSOURCES => {
+                AmdStatus::AMDSMI_STATUS_OUT_OF_RESOURCES => {
                     max_processes = count;
                     continue;
                 }
-
                 err => return Err(AmdError(err)),
             }
         }
