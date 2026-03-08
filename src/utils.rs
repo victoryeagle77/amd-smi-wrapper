@@ -10,6 +10,8 @@ pub use crate::bindings::{
     amdsmi_voltage_type_t as AmdVoltageType,
 };
 
+pub const LIB_PATH: &str = "libamd_smi.so";
+
 bitflags! {
     /// List of all [`amdsmi_init_flags_t`] bitmask value to initialize AMD-SMI library for a given hardware type to analyze.
     #[derive(Debug, Clone, Copy)]
@@ -20,6 +22,33 @@ bitflags! {
         const AMD_APUS = amdsmi_init_flags_t_AMDSMI_INIT_AMD_APUS;
         const NON_AMD_CPUS = amdsmi_init_flags_t_AMDSMI_INIT_NON_AMD_CPUS;
         const NON_AMD_GPUS = amdsmi_init_flags_t_AMDSMI_INIT_NON_AMD_GPUS;
+    }
+}
+
+/// Parameters about [`amdsmi_clk_info_t`].
+#[derive(Debug, Default, Clone)]
+pub struct AmdClkInfo {
+    /// Clock frequency in MHz.
+    pub clk: u32,
+    /// Minimal clock frequency in MHz.
+    pub min_clk: u32,
+    /// Maximal clock frequency in MHz.
+    pub max_clk: u32,
+    /// Clock locked status boolean status
+    pub clk_locked: u8,
+    /// Clock deep sleep status boolean status
+    pub clk_deep_sleep: u8,
+}
+
+impl From<amdsmi_clk_info_t> for AmdClkInfo {
+    fn from(value: amdsmi_clk_info_t) -> Self {
+        Self {
+            clk: value.clk,
+            min_clk: value.min_clk,
+            max_clk: value.max_clk,
+            clk_locked: value.clk_locked,
+            clk_deep_sleep: value.clk_deep_sleep,
+        }
     }
 }
 
@@ -55,37 +84,15 @@ impl From<amdsmi_engine_usage_t> for AmdEngineUsage {
     }
 }
 
-/// Parameters about power consumption: [`amdsmi_power_info_t`].
+/// Parameters about PCI bus traffic by a GPU.
 #[derive(Debug, Default, Clone, Copy)]
-pub struct AmdPowerConsumption {
-    /// Socket power in W.
-    pub socket_power: u64,
-    /// Current socket power in W, Mi 300+ Series cards.
-    pub current_socket_power: u32,
-    /// Average socket power in W, Navi + Mi 200 and earlier Series cards.
-    pub average_socket_power: u32,
-    /// GFX voltage measurement in mV.
-    pub gfx_voltage: u64,
-    /// SOC voltage measurement in mV.
-    pub soc_voltage: u64,
-    /// MEM voltage measurement in mV.
-    pub mem_voltage: u64,
-    /// The power limit in W.
-    pub power_limit: u32,
-}
-
-impl From<amdsmi_power_info_t> for AmdPowerConsumption {
-    fn from(info: amdsmi_power_info_t) -> Self {
-        Self {
-            socket_power: info.socket_power,
-            current_socket_power: info.current_socket_power,
-            average_socket_power: info.average_socket_power,
-            gfx_voltage: info.gfx_voltage,
-            soc_voltage: info.soc_voltage,
-            mem_voltage: info.mem_voltage,
-            power_limit: info.power_limit,
-        }
-    }
+pub struct AmdPciTraffic {
+    /// Number of bytes sent.
+    pub sent: u64,
+    /// Number of bytes received.
+    pub received: u64,
+    /// Maximum packet size.
+    pub max_pkt_sz: u64,
 }
 
 /// Parameters about engine activity usage by process: [`amdsmi_proc_info_t_memory_usage_`].
@@ -169,29 +176,35 @@ impl From<amdsmi_proc_info_t> for AmdProcess {
     }
 }
 
-/// Parameters about [`amdsmi_clk_info_t`].
-#[derive(Debug, Default, Clone)]
-pub struct AmdClkInfo {
-    /// Clock frequency in MHz.
-    pub clk: u32,
-    /// Minimal clock frequency in MHz.
-    pub min_clk: u32,
-    /// Maximal clock frequency in MHz.
-    pub max_clk: u32,
-    /// Clock locked status boolean status
-    pub clk_locked: u8,
-    /// Clock deep sleep status boolean status
-    pub clk_deep_sleep: u8,
+/// Parameters about power consumption: [`amdsmi_power_info_t`].
+#[derive(Debug, Default, Clone, Copy)]
+pub struct AmdPowerConsumption {
+    /// Socket power in W.
+    pub socket_power: u64,
+    /// Current socket power in W, Mi 300+ Series cards.
+    pub current_socket_power: u32,
+    /// Average socket power in W, Navi + Mi 200 and earlier Series cards.
+    pub average_socket_power: u32,
+    /// GFX voltage measurement in mV.
+    pub gfx_voltage: u64,
+    /// SOC voltage measurement in mV.
+    pub soc_voltage: u64,
+    /// MEM voltage measurement in mV.
+    pub mem_voltage: u64,
+    /// The power limit in W.
+    pub power_limit: u32,
 }
 
-impl From<amdsmi_clk_info_t> for AmdClkInfo {
-    fn from(value: amdsmi_clk_info_t) -> Self {
+impl From<amdsmi_power_info_t> for AmdPowerConsumption {
+    fn from(info: amdsmi_power_info_t) -> Self {
         Self {
-            clk: value.clk,
-            min_clk: value.min_clk,
-            max_clk: value.max_clk,
-            clk_locked: value.clk_locked,
-            clk_deep_sleep: value.clk_deep_sleep,
+            socket_power: info.socket_power,
+            current_socket_power: info.current_socket_power,
+            average_socket_power: info.average_socket_power,
+            gfx_voltage: info.gfx_voltage,
+            soc_voltage: info.soc_voltage,
+            mem_voltage: info.mem_voltage,
+            power_limit: info.power_limit,
         }
     }
 }
