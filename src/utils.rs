@@ -1,29 +1,16 @@
-use bitflags::bitflags;
 use std::ffi::c_char;
 
 use crate::bindings::*;
 
 pub use crate::bindings::{
-    amdsmi_clk_type_t as AmdClkType, amdsmi_memory_type_t as AmdMemoryType,
-    amdsmi_status_t as AmdStatus, amdsmi_temperature_metric_t as AmdTemperatureMetric,
+    amdsmi_clk_type_t as AmdClkType, amdsmi_init_flags_t as AmdInitFlags,
+    amdsmi_memory_type_t as AmdMemoryType, amdsmi_status_t as AmdStatus,
+    amdsmi_temperature_metric_t as AmdTemperatureMetric,
     amdsmi_temperature_type_t as AmdTemperatureType, amdsmi_voltage_metric_t as AmdVoltageMetric,
     amdsmi_voltage_type_t as AmdVoltageType,
 };
 
 pub const LIB_PATH: &str = "libamd_smi.so";
-
-bitflags! {
-    /// List of all [`amdsmi_init_flags_t`] bitmask value to initialize AMD-SMI library for a given hardware type to analyze.
-    #[derive(Debug, Clone, Copy)]
-    pub struct InitFlags: amdsmi_init_flags_t {
-        const ALL_PROCESSORS = amdsmi_init_flags_t_AMDSMI_INIT_ALL_PROCESSORS;
-        const AMD_CPUS = amdsmi_init_flags_t_AMDSMI_INIT_AMD_CPUS;
-        const AMD_GPUS = amdsmi_init_flags_t_AMDSMI_INIT_AMD_GPUS;
-        const AMD_APUS = amdsmi_init_flags_t_AMDSMI_INIT_AMD_APUS;
-        const NON_AMD_CPUS = amdsmi_init_flags_t_AMDSMI_INIT_NON_AMD_CPUS;
-        const NON_AMD_GPUS = amdsmi_init_flags_t_AMDSMI_INIT_NON_AMD_GPUS;
-    }
-}
 
 /// Parameters about [`amdsmi_clk_info_t`].
 #[derive(Debug, Default, Clone)]

@@ -100,7 +100,7 @@ impl AmdSmi {
     }
 
     /// Initialize and start amd-smi library with [`InitFlags::AMD_GPUS`].
-    pub fn init(flags: InitFlags) -> Result<Arc<Self>, AmdInitError> {
+    pub fn init(flags: AmdInitFlags) -> Result<Arc<Self>, AmdInitError> {
         // SAFETY: The library must exist at the specified path, otherwise `libamd_smi::new` returns an error.
         // This operation involves raw FFI interaction and assumes the dynamic loader succeeds.
         let amdsmi = unsafe { libamd_smi::new(LIB_PATH)? };
@@ -109,7 +109,7 @@ impl AmdSmi {
         // SAFETY: The function expects a valid library instance and valid flags.
         // According to the AMD-SMI documentation, the function fully initializes internal structures for GPU discovery.
         // The return code `amdsmi_status_t` is checked to ensure initialization succeeded before using the library.
-        let status = unsafe { instance.amdsmi.amdsmi_init(flags.bits().into()) };
+        let status = unsafe { instance.amdsmi.amdsmi_init(flags.0.into()) };
         instance.check_status(status)?;
 
         Ok(instance)

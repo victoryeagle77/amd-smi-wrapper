@@ -32,6 +32,7 @@ fn main() {
         .newtype_enum("amdsmi_voltage_type_t")
         .newtype_enum("amdsmi_voltage_metric_t")
         .newtype_enum("amdsmi_clk_type_t")
+        .bitfield_enum("amdsmi_init_flags_t")
         .generate()
         .expect("bindgen failed")
         .write_to_file(out_path.join("bindings.rs"))
