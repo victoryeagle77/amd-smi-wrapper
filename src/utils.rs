@@ -1,5 +1,5 @@
 use bitflags::bitflags;
-use std::slice::from_raw_parts;
+use std::{ffi::c_char, slice::from_raw_parts};
 
 use crate::bindings::*;
 
@@ -154,7 +154,7 @@ pub struct AmdProcess {
 }
 
 /// Allow to convert ASCII table to usable null terminated string.
-fn c_buffer_to_string(buffer: &[i8]) -> String {
+fn c_buffer_to_string(buffer: &[c_char]) -> String {
     let length = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
     let bytes = &buffer[..length];
     String::from_utf8_lossy(unsafe { from_raw_parts(bytes.as_ptr() as *const u8, bytes.len()) })

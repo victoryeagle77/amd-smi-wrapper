@@ -1,8 +1,18 @@
-use bindgen::Builder;
+use bindgen::{Builder, callbacks::ParseCallbacks};
 use std::{env::var, path::PathBuf};
 
 const LIB: &str = "libamd_smi";
 const HEADER: &str = "include/amdsmi.h";
+
+#[derive(Debug)]
+struct DocFix;
+
+impl ParseCallbacks for DocFix {
+    fn process_comment(&self, comment: &str) -> Option<String> {
+        // Transform C/C++ documentation to avoid Rust doc-test errors
+        Some(format!("```text\n{comment}\n```"))
+    }
+}
 
 fn main() {
     if var("DOCS_RS").is_ok() {
@@ -13,7 +23,7 @@ fn main() {
 
     Builder::default()
         .header(HEADER)
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+        .parse_callbacks(Box::new(DocFix))
         .dynamic_library_name(LIB)
         .newtype_enum("amdsmi_status_t")
         .newtype_enum("amdsmi_memory_type_t")
