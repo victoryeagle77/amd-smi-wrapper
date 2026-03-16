@@ -15,10 +15,6 @@ impl ParseCallbacks for DocFix {
 }
 
 fn main() {
-    if var("DOCS_RS").is_ok() {
-        return;
-    }
-
     let out_path = PathBuf::from(var("OUT_DIR").unwrap());
 
     Builder::default()
