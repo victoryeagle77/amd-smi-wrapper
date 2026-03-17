@@ -1,11 +1,6 @@
 //! Handles used to manipulate the devices.
 
-use std::{
-    ffi::{CStr, c_char},
-    mem::MaybeUninit,
-    ptr,
-    sync::Arc,
-};
+use std::{ffi::c_char, mem::MaybeUninit, ptr, sync::Arc};
 
 use crate::{
     AmdSmi,
@@ -16,6 +11,7 @@ use crate::{
     },
     error::AmdError,
     metrics::*,
+    utils::c_buffer_to_string,
 };
 
 #[cfg(feature = "mock")]
@@ -429,7 +425,7 @@ impl ProcessorHandle for AmdProcessorHandle {
     }
 
     fn device_uuid(&self) -> Result<String, AmdError> {
-        let mut uuid_buffer = vec![0 as c_char; AMDSMI_GPU_UUID_SIZE as usize];
+        let mut uuid_buffer = [0 as c_char; AMDSMI_GPU_UUID_SIZE as usize];
         let mut uuid_length = AMDSMI_GPU_UUID_SIZE;
 
         // SAFETY: According to AMD-SMI documentation, the function will not write beyond `uuid_length`.
@@ -444,22 +440,7 @@ impl ProcessorHandle for AmdProcessorHandle {
 
         self.amdsmi.check_status(result)?;
 
-        // SAFETY: Create a `CStr` from the FFI buffer.
-        // If the buffer already ends with a null terminator, we use it directly.
-        // Otherwise, we copy into a local stack buffer and append a null terminator that ensures `from_ptr` receives a null-terminated C string.
-        let c_str = if uuid_buffer[(uuid_length - 1) as usize] == 0 {
-            unsafe { CStr::from_ptr(uuid_buffer.as_ptr()) }
-        } else {
-            let mut cstr_buffer = [0 as c_char; AMDSMI_GPU_UUID_SIZE as usize + 1];
-            cstr_buffer[..uuid_length as usize]
-                .copy_from_slice(&uuid_buffer[..uuid_length as usize]);
-            cstr_buffer[uuid_length as usize] = 0;
-            unsafe { CStr::from_ptr(cstr_buffer.as_ptr()) }
-        };
-
-        c_str.to_str().map(|s| s.to_owned()).map_err(|_| AmdError {
-            status: result,
-            message: None,
-        })
+        let uuid = c_buffer_to_string(uuid_buffer.as_slice());
+        Ok(uuid)
     }
 }

@@ -7,6 +7,7 @@ mod bindings;
 pub mod error;
 pub mod handles;
 pub mod metrics;
+mod utils;
 
 use crate::handles::AmdSocketHandle;
 use error::{AmdError, AmdInitError};
