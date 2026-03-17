@@ -1,16 +1,17 @@
+//! Parameters and results of the queries that provide metrics.
+
+use crate::bindings::{
+    amdsmi_clk_info_t, amdsmi_engine_usage_t, amdsmi_power_info_t, amdsmi_proc_info_t,
+    amdsmi_proc_info_t_engine_usage_, amdsmi_proc_info_t_memory_usage_,
+};
 use std::ffi::c_char;
 
-use crate::bindings::*;
-
-pub use crate::bindings::{
-    amdsmi_clk_type_t as AmdClkType, amdsmi_init_flags_t as AmdInitFlags,
-    amdsmi_memory_type_t as AmdMemoryType, amdsmi_status_t as AmdStatus,
-    amdsmi_temperature_metric_t as AmdTemperatureMetric,
-    amdsmi_temperature_type_t as AmdTemperatureType, amdsmi_voltage_metric_t as AmdVoltageMetric,
-    amdsmi_voltage_type_t as AmdVoltageType,
-};
-
-pub const LIB_PATH: &str = "libamd_smi.so";
+pub type AmdClkType = crate::bindings::amdsmi_clk_type_t;
+pub type AmdMemoryType = crate::bindings::amdsmi_memory_type_t;
+pub type AmdTemperatureMetric = crate::bindings::amdsmi_temperature_metric_t;
+pub type AmdTemperatureType = crate::bindings::amdsmi_temperature_type_t;
+pub type AmdVoltageMetric = crate::bindings::amdsmi_voltage_metric_t;
+pub type AmdVoltageType = crate::bindings::amdsmi_voltage_type_t;
 
 /// Parameters about [`amdsmi_clk_info_t`].
 #[derive(Debug, Default, Clone)]
