@@ -3,7 +3,7 @@
 use std::{
     ffi::{CStr, c_char},
     mem::MaybeUninit,
-    ptr::null_mut,
+    ptr,
     sync::Arc,
 };
 
@@ -53,14 +53,13 @@ impl SocketHandle for AmdSocketHandle {
             self.amdsmi.amdsmi.amdsmi_get_processor_handles(
                 self.inner,
                 &mut processor_count,
-                null_mut(),
+                ptr::null_mut(),
             )
         };
         self.amdsmi.check_status(result)?;
 
-        // Allocate an uninitialized vector of socket handles.
-        // SAFETY: Each element is zeroed and considered valid for the FFI call and AMD-SMI library will fill each handle in the second call.
-        let mut processor_handles = vec![unsafe { std::mem::zeroed() }; processor_count as usize];
+        // Allocate a vector of nulls.
+        let mut processor_handles = vec![ptr::null_mut(); processor_count as usize];
 
         // Fill the buffer with processor handles.
         // SAFETY: `processor_handles.as_mut_ptr()` points to a memory block of sufficient size.
@@ -168,7 +167,8 @@ impl ProcessorHandle for AmdProcessorHandle {
         self.amdsmi.check_status(result)?;
 
         // SAFETY: `assume_init()` is safe because the FFI call succeeded and fully initialized `info`.
-        Ok(unsafe { info.assume_init().into() })
+        let info = unsafe { info.assume_init() };
+        Ok(info.into())
     }
 
     fn device_clock_info(&self, clk_type: AmdClkType) -> Result<AmdClkInfo, AmdError> {
@@ -186,7 +186,8 @@ impl ProcessorHandle for AmdProcessorHandle {
         self.amdsmi.check_status(result)?;
 
         // SAFETY: `assume_init()` is safe because the FFI call succeeded and the structure was fully initialized by the library.
-        Ok(unsafe { info.assume_init().into() })
+        let info = unsafe { info.assume_init() };
+        Ok(info.into())
     }
 
     fn device_energy_consumption(&self) -> Result<AmdEnergyConsumption, AmdError> {
@@ -285,7 +286,8 @@ impl ProcessorHandle for AmdProcessorHandle {
         self.amdsmi.check_status(result)?;
 
         // SAFETY: `assume_init()` is safe because the FFI call returned SUCCESS, meaning `info` is fully initialized.
-        Ok(unsafe { info.assume_init().into() })
+        let info = unsafe { info.assume_init() };
+        Ok(info.into())
     }
 
     fn device_power_managment(&self) -> Result<bool, AmdError> {
@@ -361,7 +363,7 @@ impl ProcessorHandle for AmdProcessorHandle {
             self.amdsmi.amdsmi.amdsmi_get_gpu_process_list(
                 self.inner,
                 &mut max_processes,
-                null_mut(),
+                ptr::null_mut(),
             )
         };
 

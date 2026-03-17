@@ -1,4 +1,4 @@
-use std::{mem::zeroed, ptr::null_mut, sync::Arc};
+use std::{ptr, sync::Arc};
 
 #[cfg(feature = "mock")]
 use mockall::automock;
@@ -110,13 +110,12 @@ impl AmdInterface for Arc<AmdSmi> {
         // SAFETY: According to the AMD-SMI documentation, passing `null_mut()` is safe which sets `socket_count` to the number of sockets in the system.
         let result = unsafe {
             self.amdsmi
-                .amdsmi_get_socket_handles(&mut socket_count, null_mut())
+                .amdsmi_get_socket_handles(&mut socket_count, ptr::null_mut())
         };
         self.check_status(result)?;
 
-        // Allocate an uninitialized vector of socket handles.
-        // SAFETY: Each element is zeroed and considered valid for the FFI call and AMD-SMI library will fill each handle in the second call.
-        let mut socket_handles = vec![unsafe { zeroed() }; socket_count as usize];
+        // Allocate a vector of null pointers.
+        let mut socket_handles = vec![ptr::null_mut(); socket_count as usize];
 
         // Fill the buffer with socket handles.
         // SAFETY: `socket_handles.as_mut_ptr()` points to memory of sufficient size.
